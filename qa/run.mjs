@@ -57,6 +57,7 @@ const num10 = (s) => Math.round(parseFloat(String(s).replace("−", "-")) * 10);
         if (P.src[0][1] !== "https://www.jma.go.jp/jma/kishou/know/yougo_hp/toki.html") why.push("出典が時に関する用語でない");
         const shown = [...P.q.split("雨は")[1].matchAll(/(\d+)時(?:(30)分)?〜(\d+)時(?:(30)分)?/g)].map((m) => [(+m[1] - P.facts.S) * 2 + (m[2] ? 1 : 0), (+m[3] - P.facts.S) * 2 + (m[4] ? 1 : 0)]);
         if (JSON.stringify(shown) !== JSON.stringify(P.facts.segs.map(([a, l]) => [a, a + l]))) why.push("問いの文の時刻が図とちがう");
+        if (/半分より長/.test(k.look) && !(P.facts.total > P.facts.P)) why.push("ヒントは半分より長いのに、雨が半分以下"); // 期間 P 時間の半分＝P こま（CodeRabbit sunayama-doko#1）
       } else if (/暑い/.test(P.ask)) {
         const x = num10(P.q.match(/最高気温は (−?[\d.]+)度/)[1]);
         if (x !== P.facts.hi || P.ans !== TB.hot(x)) why.push("答えが資料の決め方とちがう");
@@ -535,12 +536,17 @@ try {
   }
   // キーボードだけで遊べる（Tab と Enter）
   {
+    // focus() で直接動かさず、Tab を押して目当ての所まで進み、Enter で押す。Tab で届かなければ失敗（CodeRabbit sunayama-doko#1）
     const q = await newPage(); await closeHow(q);
-    await q.focus("#go-d"); await q.keyboard.press("Enter"); await q.waitForTimeout(100); await heap(q);
-    const j = await ansIdx(q);
-    await q.focus(`.ch[data-j="${j}"]`); await q.keyboard.press("Enter"); await q.waitForTimeout(100);
-    if (await q.locator(".why button").count()) { await q.focus(`.why button[data-g="${await q.evaluate(() => __nm.cur().P.grp)}"]`); await q.keyboard.press("Enter"); await q.waitForTimeout(100); }
-    check("キーボードだけで選んで答えられる（2段目もキーボードで）", await q.locator(".verdict").count() === 1);
+    const miss = [];
+    const tabTo = async (sel) => { for (let t = 0; t < 120; t++) { await q.keyboard.press("Tab"); if (await q.evaluate((s) => !!document.activeElement && document.activeElement.matches(s), sel)) return true; } miss.push(sel); return false; };
+    const press = async (sel) => { if (await tabTo(sel)) { await q.keyboard.press("Enter"); await q.waitForTimeout(80); } };
+    await press("#go-d");
+    for (let k = 0; k < 60 && !miss.length && await q.locator(".hans").count(); k++) { const n = +(await q.textContent("#cnt")).replace(/\D/g, ""); await press(`.hans button[data-a="${n > 30 ? 0 : 1}"]`); }
+    if (!miss.length) await press("#hp-go");
+    if (!miss.length) await press(`.ch[data-j="${await ansIdx(q)}"]`);
+    if (!miss.length && await q.locator(".why button").count()) await press(`.why button[data-g="${await q.evaluate(() => __nm.cur().P.grp)}"]`);
+    check("キーボードだけ（Tab と Enter）で砂山に答え、決めた線の問題も2段目まで答えられる", !miss.length && await q.locator(".verdict").count() === 1, miss.join(","));
     await q.context().close();
   }
   // 砂山（正解の無い問い）：絵・数・3つの答え・1粒ずつの段・続きから・自分の線と決めた線
@@ -577,8 +583,8 @@ try {
     await q.waitForTimeout(150);
     check("今日の回の結果にも、自分の線と決めた線・シェアの文に自分の線", await q.locator("#lines").count() === 1 && (await q.textContent(".share")).includes("のあいだ"));
     // 線のまとめ方（ずっと砂山・はじめからちがう・1粒ずつでは変わらない）
-    const r = await q.evaluate(() => { const S = (a, f) => __nm.heapSum({ t: "suna", a, f, done: 1 }); const all = S(new Array(14).fill(0), []), none = S(new Array(14).fill(1), []), keep = S([0, 0, 0, 0, 0, 0, 0, 1], new Array(9).fill(0)); return [all.kind, none.kind, keep.kind, keep.y, keep.n, keep.by1, __nm.fineMax({ t: "suna", a: [0, 1], f: [] })]; });
-    check("線のまとめ：ずっと砂山・はじめからちがう・1粒ずつ減らしきっても変わらなければ次の段の数で変わる・1粒ずつは多くて10回", JSON.stringify(r) === JSON.stringify(["all", "none", "line", 26, 25, true, 10]), JSON.stringify(r));
+    const r = await q.evaluate(() => { const S = (a, f) => __nm.heapSum({ t: "suna", a, f, done: 1 }); const all = S(new Array(14).fill(0), []), none = S(new Array(14).fill(1), []), unk = S(new Array(14).fill(2), []), unk2 = S([1, 2, 1, 1], []), keep = S([0, 0, 0, 0, 0, 0, 0, 1], new Array(9).fill(0)); return [all.kind, none.kind, unk.kind, unk2.kind, keep.kind, keep.y, keep.n, keep.by1, __nm.fineMax({ t: "suna", a: [0, 1], f: [] })]; });
+    check("線のまとめ：ずっと砂山・はじめからちがう・一度も砂山と答えず分からないをふくむ（はじめからちがう、としない）・1粒ずつ減らしきっても変わらなければ次の段の数で変わる・1粒ずつは多くて10回", JSON.stringify(r) === JSON.stringify(["all", "none", "unk", "unk", "line", 26, 25, true, 10]), JSON.stringify(r));
     // 練習の砂山：何度でも・今日の記録を増やさない
     const before = await mem(q);
     await q.goto(url); await q.waitForTimeout(150); await q.click("#go-p"); await q.click("#go-hp");

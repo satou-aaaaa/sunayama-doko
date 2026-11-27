@@ -1560,7 +1560,7 @@ function heapSum(hp) {
   const th = themeOf(hp), s = th.seq, j = turnOf(hp), un = [];
   hp.a.forEach((x, i) => { if (x === 2) un.push(s[i]); });
   const L = j >= 0 ? s[j - 1] : 0; hp.f.forEach((x, i) => { if (x === 2) un.push(L - 1 - i); });
-  if (j < 0) return { kind: hp.a.length && hp.a.every((x) => x === 0) ? "all" : hp.a.every((x) => x !== 0) ? "none" : "mix", un, th };
+  if (j < 0) return { kind: hp.a.length && hp.a.every((x) => x === 0) ? "all" : hp.a.every((x) => x === 1) ? "none" : hp.a.every((x) => x !== 0) ? "unk" : "mix", un, th }; // unk＝一度も砂山と答えず「分からない」をふくむ（はじめから砂山でない、とはしない）
   const fl = hp.f.length, last = fl ? hp.f[fl - 1] : null;
   if (fl && last !== 0) return { kind: "line", y: L - fl + 1, n: L - fl, na: last, by1: true, fl, un, th };
   return { kind: "line", y: L - fl, n: s[j], na: hp.a[j], by1: L - fl - s[j] === 1, fl, un, th };
@@ -1632,7 +1632,7 @@ function tidy(s) {
   const okTag = (t) => typeof t === "string" && Object.prototype.hasOwnProperty.call(G.BY, t.split("|")[0]);
   const okRec = (x) => !!x && typeof x === "object" && Array.isArray(x.m) && x.m.every((v) => Number.isInteger(v) && v >= 0) && (x.k === undefined || (Array.isArray(x.k) && x.k.every((v) => typeof v === "string")));
   for (const b of [s.days, s.hdays, s.adays]) for (const d in b) if (!okDate(d) || !okRec(b[d])) delete b[d];
-  for (const d in s.heap) { const h = s.heap[d]; if (!okDate(d) || !h || typeof h !== "object" || !Object.prototype.hasOwnProperty.call(G.THEME_BY, h.t)) { delete s.heap[d]; continue; } s.heap[d] = { t: h.t, y: num(h.y), n: num(h.n), b: h.b === 1 ? 1 : 0, u: num(h.u), k: ["line", "all", "none", "mix"].includes(h.k) ? h.k : "mix" }; }
+  for (const d in s.heap) { const h = s.heap[d]; if (!okDate(d) || !h || typeof h !== "object" || !Object.prototype.hasOwnProperty.call(G.THEME_BY, h.t)) { delete s.heap[d]; continue; } s.heap[d] = { t: h.t, y: num(h.y), n: num(h.n), b: h.b === 1 ? 1 : 0, u: num(h.u), k: ["line", "all", "none", "unk", "mix"].includes(h.k) ? h.k : "mix" }; }
   for (const m in s.runs) {
     const r = s.runs[m]; if (r === null) continue;
     if (typeof r !== "object" || !["d", "h", "p", "e", "a", "r"].includes(r.mode) || (m.startsWith("a:") ? r.mode !== "a" : r.mode !== m) || !okDate(r.date) || !Array.isArray(r.list) || !r.list.every(okTag) || !Array.isArray(r.res) || !r.res.every((x) => x && typeof x === "object" && Number.isInteger(x.m) && x.m >= 0)) { delete s.runs[m]; continue; }
@@ -1714,6 +1714,7 @@ function lineText(h) {
   const th = G.THEME_BY[h.t] || G.THEMES[0];
   if (h.k === "all") return `${th.w}：1${th.u}まで ずっと${th.w}`;
   if (h.k === "none") return `${th.w}：はじめから${th.w}でない`;
+  if (h.k === "unk") return `${th.w}：一度も${th.w}と答えなかった`;
   if (h.k !== "line") return `${th.w}：線は見つからなかった`;
   return `${th.w}の線：${h.y}${th.u}と${h.n}${th.u}のあいだ${h.b ? "（1" + th.u + "で変わった）" : ""}`;
 }
@@ -1861,6 +1862,7 @@ function linesHtml(h, prev) {
     ? `<b>あなたの線：${h.y}${th.u}と${h.n}${th.u}のあいだ</b>${h.y}${th.u}は「${th.w}」、${h.n}${th.u}で答えが変わりました。${h.b ? `たった1${th.u}の差です。その1${th.u}に何があったのでしょう？` : `1${th.u}ずつ減らしても、すぐには変わりませんでした。`}`
     : h.k === "all" ? `<b>あなたの線：見つからない</b>1${th.u}まで、ずっと「${th.w}」と答えました。`
     : h.k === "none" ? `<b>あなたの線：見つからない</b>はじめから「${th.w}」ではありませんでした。`
+    : h.k === "unk" ? `<b>あなたの線：見つからない</b>一度も「${th.w}」とは答えませんでした。「分からない」がありました。`
     : `<b>あなたの線：はっきりしない</b>「${th.w}」と「ちがう」が行ったり来たりしました。`;
   const un = h.u ? `<br>「分からない」と答えたのは ${h.u}回。はっきりしない所があるのが、あいまいな言葉です。` : "";
   return `<div class="lines" id="lines">
